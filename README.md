@@ -49,18 +49,6 @@ This simulator is built to **educate**, not advise or sell.
 
 ---
 
-## 🗂 Project Structure
-Retirement-and-Insurance-Simulator/
-│
-├── app.py # Main landing page
-├── README.md # Project documentation
-└── pages/
-├── retirement.py # Retirement simulator
-└── insurance.py # Insurance simulator
-
-
----
-
 ## ⚙️ Tech Stack
 
 - **Python**
