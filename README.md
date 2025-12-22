@@ -50,4 +50,44 @@ This simulator is built to **educate**, not advise or sell.
 ---
 
 ## 🗂 Project Structure
+Retirement-and-Insurance-Simulator/
+│
+├── app.py # Main landing page
+├── README.md # Project documentation
+└── pages/
+├── retirement.py # Retirement simulator
+└── insurance.py # Insurance simulator
+
+
+---
+
+## ⚙️ Tech Stack
+
+- **Python**
+- **Streamlit** – frontend & app framework
+- **Pandas** – data handling
+- **Altair** – data visualisation
+
+---
+
+## 🚀 How to Run Locally
+
+1. Clone the repository
+   ```bash
+   git clone https://github.com/<your-username>/Retirement-and-Insurance-Simulator.git
+
+
+Install dependencies
+pip install streamlit pandas altair
+
+Run the app
+streamlit run app.py
+
+⚠️ Disclaimer
+This project is an educational simulator only.
+It does not provide financial, investment, or insurance advice.
+👥 Team
+taccoHouseEnjoyers
+
+
 
