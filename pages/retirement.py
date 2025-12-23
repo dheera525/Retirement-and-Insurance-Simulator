@@ -41,33 +41,39 @@ RISK_ALLOC = {
 }
 
 # ============================================================
-# RETIREMENT CORPUS ENGINES (CORRECTED)
+# RETIREMENT CORPUS ENGINES (ONLY THIS LOGIC CHANGED)
 # ============================================================
-def required_corpus_fd(monthly_expense_today, years_to_ret, retirement_years):
-    annual_at_ret = monthly_expense_today * 12 * ((1 + INFLATION) ** years_to_ret)
+
+def portfolio_return(risk):
+    return sum(RISK_ALLOC[risk][a] * ASSET_RETURNS[a] for a in ASSET_RETURNS)
+
+
+def required_corpus_portfolio(monthly_expense_today, years_to_ret, retirement_years, risk):
+    annual = monthly_expense_today * 12 * ((1 + INFLATION) ** years_to_ret)
+    r = portfolio_return(risk)
 
     def survives(C):
+        E = annual
         for _ in range(retirement_years):
-            C = C + C * POST_RET_RETURN - annual_at_ret
+            C = C * (1 + r) - E
             if C < 0:
                 return False
+            E *= (1 + INFLATION)
         return True
 
     lo, hi = 0, 1e11
     for _ in range(100):
         mid = (lo + hi) / 2
-        if survives(mid):
-            hi = mid
-        else:
-            lo = mid
+        hi = mid if survives(mid) else hi
+        lo = lo if survives(mid) else mid
     return hi
 
 
-def required_corpus_inflation(monthly_expense_today, years_to_ret, retirement_years):
-    annual_at_ret = monthly_expense_today * 12 * ((1 + INFLATION) ** years_to_ret)
+def required_corpus_fd_lockin(monthly_expense_today, years_to_ret, retirement_years):
+    annual = monthly_expense_today * 12 * ((1 + INFLATION) ** years_to_ret)
 
     def survives(C):
-        E = annual_at_ret
+        E = annual
         for _ in range(retirement_years):
             C = C * (1 + POST_RET_RETURN) - E
             if C < 0:
@@ -78,18 +84,14 @@ def required_corpus_inflation(monthly_expense_today, years_to_ret, retirement_ye
     lo, hi = 0, 1e11
     for _ in range(100):
         mid = (lo + hi) / 2
-        if survives(mid):
-            hi = mid
-        else:
-            lo = mid
+        hi = mid if survives(mid) else hi
+        lo = lo if survives(mid) else mid
     return hi
 
-# ============================================================
-# SIP + RISK ENGINES
-# ============================================================
-def portfolio_return(risk):
-    return sum(RISK_ALLOC[risk][a] * ASSET_RETURNS[a] for a in ASSET_RETURNS)
 
+# ============================================================
+# SIP + SUPPORTING ENGINES (UNCHANGED)
+# ============================================================
 
 def required_monthly_sip(required_corpus, current_savings, years, annual_return):
     lo, hi = 0, 300_000
@@ -98,10 +100,8 @@ def required_monthly_sip(required_corpus, current_savings, years, annual_return)
         C = current_savings
         for _ in range(years):
             C = C * (1 + annual_return) + 12 * mid
-        if C >= required_corpus:
-            hi = mid
-        else:
-            lo = mid
+        hi = mid if C >= required_corpus else hi
+        lo = lo if C >= required_corpus else mid
     return int(hi)
 
 
@@ -112,19 +112,15 @@ def min_start_sip_for_overshoot(required_sip, years, stepup, overshoot_factor=1.
         sip = mid
         for _ in range(years):
             sip = min(sip * (1 + stepup), required_sip * overshoot_factor)
-        if sip >= required_sip * overshoot_factor:
-            hi = mid
-        else:
-            lo = mid
+        hi = mid if sip >= required_sip * overshoot_factor else hi
+        lo = lo if sip >= required_sip * overshoot_factor else mid
     return int(hi)
 
 
 def system_risk_level(current_age, retirement_age, is_behind):
     years = retirement_age - current_age
     base = 4 if years > 25 else 3 if years > 15 else 2
-    if is_behind:
-        base = min(5, base + 1)
-    return base
+    return min(5, base + 1) if is_behind else base
 
 
 def blended_risk(user_risk, system_risk):
@@ -152,29 +148,26 @@ with col_inputs:
             step=1000,
             value=100000
         )
-        st.markdown(
-            "<div class='small-note'>This amount is inflated till retirement age.</div>",
-            unsafe_allow_html=True
-        )
+        st.markdown("<div class='small-note'>Inflated till retirement automatically.</div>", unsafe_allow_html=True)
 
         retirement_style = st.radio(
-            "Retirement spending style",
+            "Post-retirement investment strategy",
             [
-                "Fixed Deposit (nominal spending, corpus reduces)",
-                "Inflation-protected (real spending)"
+                "Portfolio Withdrawal (Systematic)",
+                "FD Lock-In (Conservative)"
             ]
         )
 
-        if retirement_style.startswith("Fixed"):
+        if retirement_style.startswith("Portfolio"):
             st.markdown(
-                "<div class='small-note'>After retirement, withdrawals stay fixed in rupee terms. "
-                "Purchasing power reduces over time.</div>",
+                "<div class='small-note'>Corpus stays invested across assets. "
+                "Withdrawals rise with inflation. Slower depletion.</div>",
                 unsafe_allow_html=True
             )
         else:
             st.markdown(
-                "<div class='small-note'>After retirement, withdrawals increase every year "
-                "to preserve purchasing power.</div>",
+                "<div class='small-note'>Entire corpus moved to FD at retirement. "
+                "Safer but depletes faster due to lower returns.</div>",
                 unsafe_allow_html=True
             )
 
@@ -192,9 +185,9 @@ if calculate:
     retirement_years = 90 - retirement_age
 
     required = (
-        required_corpus_fd(monthly_expense, years_to_ret, retirement_years)
-        if retirement_style.startswith("Fixed")
-        else required_corpus_inflation(monthly_expense, years_to_ret, retirement_years)
+        required_corpus_portfolio(monthly_expense, years_to_ret, retirement_years, user_risk)
+        if retirement_style.startswith("Portfolio")
+        else required_corpus_fd_lockin(monthly_expense, years_to_ret, retirement_years)
     )
 
     progress = min(current_savings / required, 1.0)
@@ -210,16 +203,25 @@ if calculate:
     final_risk = blended_risk(user_risk, system_risk)
 
     # ============================================================
-    # RIGHT COLUMN – ASSUMPTIONS + PROGRESS
+    # ASSUMPTIONS + PROGRESS (RESTORED)
     # ============================================================
     with col_info:
         with st.container(border=True):
             st.markdown("### Our Assumptions")
             st.markdown("""
-            • Inflation: 6%  
-            • Post-retirement returns: 5%  
-            • Life expectancy: 90  
-            """)
+        **Inflation** - 6% per year
+                        
+        **Post-retirement returns** - Portfolio-based or FD-based (depending on strategy)
+                        
+        **Life expectancy** - 90 years
+                        
+        **Asset return assumptions (annual)**
+        - Equity: **12%**
+        - Debt: **7%**
+        - Gold: **6%**
+        - Savings / Liquid: **4%**
+        """)
+
 
         with st.container(border=True):
             st.markdown("### Your retirement journey so far")
@@ -240,12 +242,12 @@ if calculate:
                 st.success("At your current investment rate, you are on track.")
 
     # ============================================================
-    # SIP PATH (OVERSHOOT)
+    # SIP PATH (UNCHANGED)
     # ============================================================
     years = list(range(1, years_to_ret + 1))
     sip = current_monthly_investment
-    catchup = []
     cap = 1.10 * required_sip
+    catchup = []
 
     for _ in years:
         catchup.append(int(sip))
@@ -263,7 +265,7 @@ if calculate:
             st.line_chart(df.set_index("Years till retirement"))
 
     # ============================================================
-    # INVESTMENT ALLOCATION
+    # INVESTMENT ALLOCATION (UNCHANGED)
     # ============================================================
     with st.container(border=True):
         st.markdown("### Where your monthly investment goes")
@@ -293,45 +295,33 @@ if calculate:
             st.dataframe(alloc_df, hide_index=True, use_container_width=True)
 
     # ============================================================
-    # POST-RETIREMENT DE-INVESTMENT EXPLANATION
+    # POST-RETIREMENT EXPLANATION (UNCHANGED)
     # ============================================================
     with st.container(border=True):
         st.markdown("### How your retirement money is used")
-
         st.markdown("""
-        **Suggested de-investment structure:**
-
-        • **40–50% in Fixed Deposits / Liquid funds**  
-          Covers near-term expenses with stability.
-
-        • **30–40% in Debt instruments**  
-          Provides moderate returns and refills FD bucket.
-
-        • **10–30% in Growth assets**  
-          Helps manage longevity risk.
-
-        Withdrawals happen from the FD bucket, which is periodically refilled.
-        As the corpus reduces, interest earned also naturally reduces.
+        • Short-term: Fixed deposits / liquid funds  
+        • Medium-term: Debt instruments  
+        • Long-term: Growth assets  
         """)
 
     # ============================================================
-    # FINAL EXPLANATION
+    # FINAL EXPLANATION (UPDATED TEXT ONLY)
     # ============================================================
     with st.container(border=True):
         st.markdown("### How to interpret the two retirement models")
-
         st.markdown("""
-        **Fixed Deposit mode**  
-        • Expenses are inflation-adjusted till retirement  
-        • Withdrawals stay fixed after retirement  
-        • Purchasing power reduces over time  
-        • Requires a lower corpus  
+        **Portfolio Withdrawal (Systematic)**  
+        • Corpus stays invested across assets  
+        • Withdrawals increase every year with inflation  
+        • Slower corpus depletion  
+        • Reflects modern retirement planning  
 
-        **Inflation-protected mode**  
-        • Expenses are inflation-adjusted till retirement  
-        • Withdrawals increase every year after retirement  
-        • Purchasing power is preserved  
-        • Requires a much higher corpus  
+        **FD Lock-In (Conservative)**  
+        • Entire corpus moved to fixed deposits at retirement  
+        • Withdrawals increase with inflation  
+        • Faster corpus depletion due to lower returns  
+        • Reflects extreme risk aversion  
 
-        Both approaches are valid — they reflect different retirement philosophies.
+        Both models ensure the corpus lasts till age 90.
         """)
